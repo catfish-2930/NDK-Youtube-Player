@@ -1,0 +1,5 @@
+vendor/downloads/
+vendor/ffmpeg-extract/
+vendor/bin/*.exe
+workspace/
+*.log

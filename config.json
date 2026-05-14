@@ -1,0 +1,27 @@
+{
+  "toolChecks": [],
+  "settings": [
+    {
+      "key": "recommendationQuery",
+      "label": "Recommendation query",
+      "type": "text",
+      "default": "华语 KTV 官方 MV"
+    },
+    {
+      "key": "maxVideoHeight",
+      "label": "Max video quality",
+      "type": "select",
+      "default": 1080,
+      "options": [
+        {
+          "label": "1080p",
+          "value": 1080
+        },
+        {
+          "label": "720p",
+          "value": 720
+        }
+      ]
+    }
+  ]
+}
