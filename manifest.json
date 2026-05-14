@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Online multimedia player",
   "type": "Multimedia",
-  "github": "https://github.com/example/NDK-Youtube-Player",
+  "github": "https://github.com/catfish-2930/NDK-Youtube-Player",
   "enabledByDefault": true,
   "entryPoints": {
     "home": {
@@ -18,7 +18,7 @@
   },
   "renderer": {
     "source": "renderer/YouTubePluginPage.jsx",
-    "entry": "renderer/index.js"
+    "entry": "dist/renderer/index.js"
   },
   "main": {
     "entry": "main/index.mjs"
