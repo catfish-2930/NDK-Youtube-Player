@@ -203,7 +203,6 @@ function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
           </div>
         ) : (
           videos.map((video) => {
-            const progress = jobProgress[video.id]
             const isActive = Boolean(activeVideoIds[video.id])
 
             return (
@@ -220,7 +219,7 @@ function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
                 onTouchEnd={handleLongPressEnd}
                 onTouchCancel={handleLongPressEnd}
               >
-                <div className={`youtube-video-thumb ${progress ? 'has-progress' : ''}`}>
+                <div className="youtube-video-thumb">
                   {video.thumbnail ? (
                     <img
                       src={video.thumbnail}
@@ -236,21 +235,6 @@ function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
                     <Download size={18} />
                     {isActive ? '处理中' : '下载'}
                   </span>
-                  {progress ? (
-                    <span className={`youtube-video-progress ${progress.status || ''}`}>
-                      <span className="youtube-video-progress-meta">
-                        <span>{progress.speed || progress.status || ''}</span>
-                        <span>
-                          {Math.max(0, Math.min(100, Math.round(progress.percent || 0)))}%
-                        </span>
-                      </span>
-                      <span className="youtube-video-progress-track">
-                        <span
-                          style={{ width: `${Math.max(0, Math.min(100, progress.percent || 0))}%` }}
-                        />
-                      </span>
-                    </span>
-                  ) : null}
                 </div>
                 <div className="youtube-video-meta">
                   <div className="youtube-video-name">{video.title}</div>
