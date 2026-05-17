@@ -18,7 +18,7 @@
   },
   "renderer": {
     "source": "renderer/YouTubePluginPage.jsx",
-    "entry": "dist/renderer/index.js"
+    "entry": "renderer/index.js"
   },
   "main": {
     "entry": "main/index.mjs"
