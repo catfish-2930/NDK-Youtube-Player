@@ -53,12 +53,19 @@ async function assertToolsReady(paths) {
     return { ok: true, tools }
   }
 
-  if (!(await canRunCommand(tools.ytdlp, ['--version']))) {
-    toolsReadyByPath.delete(tools.ytdlp)
-    return { ok: false, error: 'YouTube Player requires the yt-dlp plugin. Install yt-dlp first.' }
+  // Retry a few times in case the binary is temporarily locked (e.g. by mpv/libmpv from the previous session).
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    if (await canRunCommand(tools.ytdlp, ['--version'])) {
+      toolsReadyByPath.set(tools.ytdlp, { ok: true, checkedAt: Date.now() })
+      return { ok: true, tools }
+    }
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
   }
-  toolsReadyByPath.set(tools.ytdlp, { ok: true, checkedAt: Date.now() })
-  return { ok: true, tools }
+
+  toolsReadyByPath.delete(tools.ytdlp)
+  return { ok: false, error: 'YouTube Player requires the yt-dlp plugin. Install yt-dlp first.' }
 }
 
 function runProcess(command, args, options = {}) {
@@ -427,4 +434,8 @@ export function register({ ipcMain, plugin, paths, getConfig, channelPrefix }) {
   ipcMain.handle(`${channelPrefix}:download`, async (event, video) => {
     return resolveDashStream({ paths, plugin, sender: event.sender, video, config: getConfig() })
   })
+}
+
+export async function prepareStartup({ paths }) {
+  return assertToolsReady(paths)
 }

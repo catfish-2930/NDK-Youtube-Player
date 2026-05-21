@@ -81,7 +81,7 @@
   container-type: inline-size;
   display: grid;
   grid-template-rows: auto minmax(0, auto) auto;
-  gap: clamp(5px, 1.8cqw, 8px);
+  gap: clamp(6px, 1cqw, 10px);
   align-content: start;
   height: 100%;
   min-height: 0;
@@ -148,7 +148,7 @@
 
 .youtube-video-meta {
   display: grid;
-  gap: clamp(2px, 0.9cqw, 4px);
+  gap: 2px;
   min-width: 0;
 }
 
@@ -156,9 +156,8 @@
   margin: 0;
   font-size: clamp(12px, 9.2cqw, 16px);
   font-weight: 700;
-  line-height: 1.18;
-  min-height: calc(1.18em * 2);
-  max-height: calc(1.18em * 2);
+  line-height: 1.2;
+  max-height: calc(1.2em * 2);
   display: -webkit-box;
   overflow: hidden;
   line-clamp: 2;
