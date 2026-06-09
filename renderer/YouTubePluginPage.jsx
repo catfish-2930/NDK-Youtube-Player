@@ -1,6 +1,6 @@
 import PropTypes from 'prop-types'
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Download, Search, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import './YouTubePluginPage.css'
 
 function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
@@ -231,10 +231,7 @@ function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
                       }}
                     />
                   ) : null}
-                  <span className="youtube-video-action">
-                    <Download size={18} />
-                    {isActive ? '处理中' : '下载'}
-                  </span>
+
                 </div>
                 <div className="youtube-video-meta">
                   <div className="youtube-video-name">{video.title}</div>
