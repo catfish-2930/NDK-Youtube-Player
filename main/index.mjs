@@ -271,7 +271,8 @@ function buildMediaItem(pluginId, videoId, title, artist, source) {
     path: source.webpageUrl || source.videoUrl || '',
     mediaSource: source,
     sourcePluginId: pluginId,
-    externalId: videoId
+    externalId: videoId,
+    thumbnail: source.thumbnail || ''
   }
 }
 
@@ -320,6 +321,7 @@ async function resolveDashStream({ paths, plugin, sender, video, config }) {
   const title = String(video?.title || videoId || 'YouTube Video')
   const artist = String(video?.artist || '')
   const url = String(video?.webpageUrl || video?.url || '').trim()
+  const thumbnail = String(video?.thumbnail || '').trim()
 
   if (!videoId || !url) {
     return { ok: false, error: 'Invalid YouTube video.' }
@@ -354,7 +356,8 @@ async function resolveDashStream({ paths, plugin, sender, video, config }) {
       title,
       maxHeight: maxVideoHeight,
       ytdlFormat: getYtdlFormat(maxVideoHeight),
-      ytdlPath: ready.tools.ytdlp
+      ytdlPath: ready.tools.ytdlp,
+      thumbnail
     }
 
     emitJobProgress(sender, plugin.id, {
