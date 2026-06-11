@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
 import './YouTubePluginPage.css'
 
-function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
+function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
   const pageSize = 10
   const [query, setQuery] = useState('')
   const [keyboardOpen, setKeyboardOpen] = useState(false)
@@ -175,7 +175,7 @@ function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
         return
       }
 
-      setMessage(`${result.mediaItem.title} added to queue.`)
+      onShowToast?.(`${result.mediaItem.title} added to queue.`)
     } catch (error) {
       setMessage(error.message || 'Stream preparation failed.')
     } finally {
@@ -195,11 +195,11 @@ function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
         {loading ? (
           <div className="youtube-state youtube-loading-state">
             <span className="youtube-spinner" aria-hidden="true" />
-            <span>Loading YouTube videos...</span>
+            <span>Loading...</span>
           </div>
         ) : videos.length === 0 ? (
           <div className="youtube-state">
-            No videos. Install the YouTube plugin or try another search.
+            {message || 'No videos. Install the YouTube plugin or try another search.'}
           </div>
         ) : (
           videos.map((video) => {
@@ -241,6 +241,9 @@ function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
             )
           })
         )}
+        {!loading && videos.length > 0 && message ? (
+          <div className="youtube-state youtube-message-state">{message}</div>
+        ) : null}
       </div>
 
       <div className="youtube-plugin-footer">
@@ -314,7 +317,6 @@ function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
           </div>
         </div>
       ) : null}
-      {message ? <div className="youtube-toast">{message}</div> : null}
       {KeyboardComponent ? (
         <KeyboardComponent
           visible={keyboardOpen}
@@ -330,6 +332,7 @@ function YouTubePluginPage({ onEnqueueMedia, KeyboardComponent }) {
 
 YouTubePluginPage.propTypes = {
   onEnqueueMedia: PropTypes.func.isRequired,
+  onShowToast: PropTypes.func,
   KeyboardComponent: PropTypes.elementType
 }
 

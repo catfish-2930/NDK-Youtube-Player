@@ -293,8 +293,13 @@ function getCachedMediaItem({ plugin, videoId, title, artist }) {
 }
 
 function getYtdlFormat(maxVideoHeight) {
-  const height = Number(maxVideoHeight || 1080) === 720 ? 720 : 1080
+  const height = normalizeMaxVideoHeight(maxVideoHeight)
   return `bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`
+}
+
+function normalizeMaxVideoHeight(value) {
+  const height = Number(value || 1080)
+  return [480, 720, 1080, 1440, 2160].includes(height) ? height : 1080
 }
 
 function addCachedMedia({ plugin, videoId, title, artist, source }) {
@@ -329,7 +334,7 @@ async function resolveDashStream({ paths, plugin, sender, video, config }) {
 
   ensureDir(paths.cacheDir)
 
-  const maxVideoHeight = Number(config.maxVideoHeight || 1080) === 720 ? 720 : 1080
+  const maxVideoHeight = normalizeMaxVideoHeight(config.maxVideoHeight)
   const cachedMediaItem = getCachedMediaItem({ plugin, videoId, title, artist })
   if (cachedMediaItem) {
     return {
