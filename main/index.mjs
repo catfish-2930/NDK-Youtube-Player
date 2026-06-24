@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { basename, dirname, join } from 'path'
 import { spawn } from 'child_process'
 
@@ -27,10 +27,27 @@ function getCleanEnv() {
   return env
 }
 
+function findExecutableFile(candidates) {
+  for (const candidate of candidates.filter(Boolean)) {
+    try {
+      if (existsSync(candidate) && statSync(candidate).isFile()) {
+        return candidate
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+  return ''
+}
+
 function getTools(paths) {
   const ytdlpFileName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
   const installedPluginsRoot = dirname(paths.installedRoot)
-  const vendorYtdlp = join(installedPluginsRoot, 'ytdlp', 'vendor', 'bin', ytdlpFileName)
+  const vendorYtdlp = findExecutableFile([
+    paths.ytdlpExecutablePath,
+    join(installedPluginsRoot, 'ytdlp', 'vendor', 'bin', ytdlpFileName),
+    join(paths.toolsDir || '', ytdlpFileName)
+  ])
 
   return {
     ytdlp: vendorYtdlp
@@ -51,6 +68,10 @@ async function assertToolsReady(paths) {
   const cached = toolsReadyByPath.get(tools.ytdlp)
   if (cached?.ok) {
     return { ok: true, tools }
+  }
+
+  if (!tools.ytdlp) {
+    return { ok: false, error: 'YouTube Player requires the yt-dlp plugin. Install yt-dlp first.' }
   }
 
   // Retry a few times in case the binary is temporarily locked (e.g. by mpv/libmpv from the previous session).
@@ -392,21 +413,6 @@ export function register({ ipcMain, plugin, paths, getConfig, channelPrefix }) {
     return
   }
   registered = true
-
-  if (paths?.toolsDir) {
-    const pathParts = String(process.env.PATH || process.env.Path || '')
-      .split(process.platform === 'win32' ? ';' : ':')
-      .filter(Boolean)
-    const hasToolsDir =
-      process.platform === 'win32'
-        ? pathParts.some((part) => part.toLowerCase() === paths.toolsDir.toLowerCase())
-        : pathParts.includes(paths.toolsDir)
-    if (!hasToolsDir) {
-      const delimiter = process.platform === 'win32' ? ';' : ':'
-      process.env.PATH = `${paths.toolsDir}${delimiter}${pathParts.join(delimiter)}`
-      process.env.Path = process.env.PATH
-    }
-  }
 
   const channels = [
     `${channelPrefix}:recommend`,
