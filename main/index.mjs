@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
 import { mkdir, readdir, rm } from 'fs/promises'
-import { basename, dirname, join } from 'path'
+import { basename, join } from 'path'
 import { spawn } from 'child_process'
 import { get as httpsGet } from 'https'
 
@@ -42,16 +42,10 @@ function findExecutableFile(candidates) {
 }
 
 function getTools(paths) {
-  const ytdlpFileName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
-  const installedPluginsRoot = dirname(paths.installedRoot)
-  const vendorYtdlp = findExecutableFile([
-    paths.ytdlpExecutablePath,
-    join(installedPluginsRoot, 'ytdlp', 'vendor', 'bin', ytdlpFileName),
-    join(paths.toolsDir || '', ytdlpFileName)
-  ])
+  const sharedYtdlp = findExecutableFile([paths.ytdlpExecutablePath])
 
   return {
-    ytdlp: vendorYtdlp || ''
+    ytdlp: sharedYtdlp
   }
 }
 
@@ -72,7 +66,7 @@ async function assertToolsReady(paths) {
   }
 
   if (!tools.ytdlp) {
-    return { ok: false, error: 'YouTube Player requires the yt-dlp plugin. Install yt-dlp first.' }
+    return { ok: false, error: 'YouTube Player requires NDK-yt-dlp. Install it first.' }
   }
 
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -84,7 +78,7 @@ async function assertToolsReady(paths) {
   }
 
   toolsReadyByPath.delete(tools.ytdlp)
-  return { ok: false, error: 'YouTube Player requires the yt-dlp plugin. Install yt-dlp first.' }
+  return { ok: false, error: 'YouTube Player requires NDK-yt-dlp. Install it first.' }
 }
 
 async function readCommandText(command, args) {
@@ -177,7 +171,7 @@ async function getYtdlpVersion(paths) {
   const tools = getTools(paths)
   const current = await readCommandText(tools.ytdlp, ['--version'])
   if (!current.ok) {
-    return { ok: false, error: 'yt-dlp is not installed. Install the YouTube plugin first.' }
+    return { ok: false, error: 'NDK-yt-dlp is not installed. Install it first.' }
   }
 
   const currentVersion = current.text.split(/\s+/)[0]
@@ -590,21 +584,6 @@ export function register({ ipcMain, plugin, paths, getConfig, channelPrefix }) {
     return
   }
   registered = true
-
-  if (paths?.toolsDir) {
-    const pathParts = String(process.env.PATH || process.env.Path || '')
-      .split(process.platform === 'win32' ? ';' : ':')
-      .filter(Boolean)
-    const hasToolsDir =
-      process.platform === 'win32'
-        ? pathParts.some((part) => part.toLowerCase() === paths.toolsDir.toLowerCase())
-        : pathParts.includes(paths.toolsDir)
-    if (!hasToolsDir) {
-      const delimiter = process.platform === 'win32' ? ';' : ':'
-      process.env.PATH = `${paths.toolsDir}${delimiter}${pathParts.join(delimiter)}`
-      process.env.Path = process.env.PATH
-    }
-  }
 
   const channels = [
     `${channelPrefix}:recommend`,

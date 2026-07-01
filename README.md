@@ -2,20 +2,9 @@
 
 This is an independent plugin project. It has its own Git repository and is not considered installed by the karaoke host until it is copied or released into `plugins/installed/youtube-player`.
 
-## Windows Tool Layout
+## Dependency
 
-- `vendor/bin/yt-dlp.exe`
-- `vendor/bin/ffmpeg.exe`
-- `vendor/bin/ffprobe.exe`
-- `vendor/downloads/` for downloaded archives
-
-## Linux Tool Layout
-
-- `vendor/bin/yt-dlp`
-- `ffmpeg` from the system PATH
-- `vendor/downloads/` for downloaded files
-
-For local Linux setup, run `plugins/projects/youtube-player/scripts/setup-linux.sh`.
+Install the `NDK-yt-dlp` marketplace plugin first. YouTube Player does not download or maintain a private yt-dlp binary; NDKaraoke supplies the shared executable through the plugin context.
 
 ## Runtime Workspace
 
