@@ -1,5 +1,12 @@
 {
-  "toolChecks": [],
+  "toolChecks": [
+    {
+      "key": "ytdlp",
+      "label": "yt-dlp version",
+      "statusChannel": "plugin:youtube-player:getYtdlpVersion",
+      "channel": "plugin:youtube-player:checkYtdlpUpdate"
+    }
+  ],
   "settings": [
     {
       "key": "recommendationQuery",

@@ -6,6 +6,35 @@
   "type": "Multimedia",
   "github": "https://github.com/catfish-2930/NDK-Youtube-Player",
   "enabledByDefault": true,
+  "installer": {
+    "windows": {
+      "workDir": "plugins/workspace/youtube-player",
+      "toolsDir": "plugins/installed/youtube-player/vendor/bin",
+      "tools": [
+        {
+          "id": "yt-dlp",
+          "name": "yt-dlp",
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
+          "target": "yt-dlp.exe"
+        }
+      ]
+    },
+    "linux": {
+      "workDir": "plugins/workspace/youtube-player",
+      "toolsDir": "plugins/installed/youtube-player/vendor/bin",
+      "notes": [
+        "yt-dlp will be installed into the plugin vendor/bin folder."
+      ],
+      "tools": [
+        {
+          "id": "yt-dlp",
+          "name": "yt-dlp",
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux",
+          "target": "yt-dlp"
+        }
+      ]
+    }
+  },
   "entryPoints": {
     "home": {
       "label": "YouTube",

@@ -1,6 +1,6 @@
 import PropTypes from 'prop-types'
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Search, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Search, X, XCircle } from 'lucide-react'
 import './YouTubePluginPage.css'
 
 function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
@@ -142,6 +142,25 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
     }
   }
 
+  const handleCancelDownload = async (video) => {
+    setContextMenuVideo(null)
+    try {
+      await window.api.plugins.invoke('plugin:youtube-player:cancel', { videoId: video.id })
+    } catch {
+      // ignore — optimistically clear local state
+    }
+    setActiveVideoIds((prev) => {
+      const next = { ...prev }
+      delete next[video.id]
+      return next
+    })
+    setJobProgress((prev) => {
+      const next = { ...prev }
+      delete next[video.id]
+      return next
+    })
+  }
+
   const handlePickVideo = async (video) => {
     if (didLongPressRef.current) {
       didLongPressRef.current = false
@@ -203,6 +222,7 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
           </div>
         ) : (
           videos.map((video) => {
+            const progress = jobProgress[video.id]
             const isActive = Boolean(activeVideoIds[video.id])
 
             return (
@@ -219,7 +239,7 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
                 onTouchEnd={handleLongPressEnd}
                 onTouchCancel={handleLongPressEnd}
               >
-                <div className="youtube-video-thumb">
+                <div className={`youtube-video-thumb ${progress ? 'has-progress' : ''}`}>
                   {video.thumbnail ? (
                     <img
                       src={video.thumbnail}
@@ -231,7 +251,30 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
                       }}
                     />
                   ) : null}
-
+                  {video.isLive ? (
+                    <span className="youtube-content-badge live">LIVE</span>
+                  ) : video.isMusic ? (
+                    <span className="youtube-content-badge music">♫ MUSIC</span>
+                  ) : null}
+                  <span className="youtube-video-action">
+                    <Download size={18} />
+                    {isActive ? '处理中' : '下载'}
+                  </span>
+                  {progress ? (
+                    <span className={`youtube-video-progress ${progress.status || ''}`}>
+                      <span className="youtube-video-progress-meta">
+                        <span>{progress.speed || progress.status || ''}</span>
+                        <span>
+                          {Math.max(0, Math.min(100, Math.round(progress.percent || 0)))}%
+                        </span>
+                      </span>
+                      <span className="youtube-video-progress-track">
+                        <span
+                          style={{ width: `${Math.max(0, Math.min(100, progress.percent || 0))}%` }}
+                        />
+                      </span>
+                    </span>
+                  ) : null}
                 </div>
                 <div className="youtube-video-meta">
                   <div className="youtube-video-name">{video.title}</div>
@@ -286,25 +329,25 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
       </div>
 
       {contextMenuVideo ? (
-        <div
-          className="youtube-context-overlay"
-          onClick={() => setContextMenuVideo(null)}
-        >
-          <div
-            className="youtube-context-menu"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="youtube-context-overlay" onClick={() => setContextMenuVideo(null)}>
+          <div className="youtube-context-menu" onClick={(e) => e.stopPropagation()}>
             <div className="youtube-context-menu-thumb">
               {contextMenuVideo.thumbnail ? (
-                <img
-                  src={contextMenuVideo.thumbnail}
-                  alt=""
-                  referrerPolicy="no-referrer"
-                />
+                <img src={contextMenuVideo.thumbnail} alt="" referrerPolicy="no-referrer" />
               ) : null}
             </div>
             <div className="youtube-context-menu-title">{contextMenuVideo.title}</div>
             <div className="youtube-context-menu-actions">
+              {activeVideoIds[contextMenuVideo.id] ? (
+                <button
+                  className="youtube-context-option danger"
+                  type="button"
+                  onClick={() => handleCancelDownload(contextMenuVideo)}
+                >
+                  <XCircle size={18} />
+                  取消下载
+                </button>
+              ) : null}
               <button
                 className="youtube-context-option"
                 type="button"
