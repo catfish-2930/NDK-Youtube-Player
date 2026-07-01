@@ -161,25 +161,6 @@
   background: linear-gradient(90deg, #7357e8, #d153ae);
 }
 
-.youtube-video-action {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 999px;
-  padding: 5px 9px;
-  background: rgba(0, 0, 0, 0.62);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
-  text-shadow: 0 3px 10px rgba(0, 0, 0, 0.55);
-}
-
-.youtube-video-thumb.has-progress .youtube-video-action {
-  margin-bottom: 34px;
-}
-
 .youtube-video-meta {
   display: grid;
   gap: clamp(2px, 0.9cqw, 4px);

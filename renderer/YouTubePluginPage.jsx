@@ -1,6 +1,6 @@
 import PropTypes from 'prop-types'
 import { useEffect, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, Download, Search, X, XCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Search, X, XCircle } from 'lucide-react'
 import './YouTubePluginPage.css'
 
 function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
@@ -256,10 +256,6 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
                   ) : video.isMusic ? (
                     <span className="youtube-content-badge music">♫ MUSIC</span>
                   ) : null}
-                  <span className="youtube-video-action">
-                    <Download size={18} />
-                    {isActive ? '处理中' : '下载'}
-                  </span>
                   {progress ? (
                     <span className={`youtube-video-progress ${progress.status || ''}`}>
                       <span className="youtube-video-progress-meta">
