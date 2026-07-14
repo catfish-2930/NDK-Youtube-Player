@@ -1,9 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'fs'
-import { basename, dirname, join } from 'path'
+import { mkdir, readdir, rm } from 'fs/promises'
+import { basename, join } from 'path'
 import { spawn } from 'child_process'
+import { get as httpsGet } from 'https'
 
 let registered = false
 const sessionState = (globalThis.__karaokeYoutubePlayerSessionState ||= {
+  cleanedOnStartup: false,
   mediaCache: new Map(),
   toolsReadyByPath: new Map(),
   searchStates: new Map()
@@ -36,9 +39,7 @@ function getCleanEnv() {
 function findExecutableFile(candidates) {
   for (const candidate of candidates.filter(Boolean)) {
     try {
-      if (existsSync(candidate) && statSync(candidate).isFile()) {
-        return candidate
-      }
+      if (existsSync(candidate) && statSync(candidate).isFile()) return candidate
     } catch {
       // Try the next candidate.
     }
@@ -47,16 +48,10 @@ function findExecutableFile(candidates) {
 }
 
 function getTools(paths) {
-  const ytdlpFileName = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
-  const installedPluginsRoot = dirname(paths.installedRoot)
-  const vendorYtdlp = findExecutableFile([
-    paths.ytdlpExecutablePath,
-    join(installedPluginsRoot, 'ytdlp', 'vendor', 'bin', ytdlpFileName),
-    join(paths.toolsDir || '', ytdlpFileName)
-  ])
+  const sharedYtdlp = findExecutableFile([paths.ytdlpExecutablePath])
 
   return {
-    ytdlp: vendorYtdlp
+    ytdlp: sharedYtdlp
   }
 }
 
@@ -77,22 +72,121 @@ async function assertToolsReady(paths) {
   }
 
   if (!tools.ytdlp) {
-    return { ok: false, error: 'YouTube Player requires the yt-dlp plugin. Install yt-dlp first.' }
+    return { ok: false, error: 'YouTube Player requires NDK-yt-dlp. Install it first.' }
   }
 
-  // Retry a few times in case the binary is temporarily locked (e.g. by mpv/libmpv from the previous session).
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     if (await canRunCommand(tools.ytdlp, ['--version'])) {
       toolsReadyByPath.set(tools.ytdlp, { ok: true, checkedAt: Date.now() })
       return { ok: true, tools }
     }
-    if (attempt < 3) {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-    }
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 1000))
   }
 
   toolsReadyByPath.delete(tools.ytdlp)
-  return { ok: false, error: 'YouTube Player requires the yt-dlp plugin. Install yt-dlp first.' }
+  return { ok: false, error: 'YouTube Player requires NDK-yt-dlp. Install it first.' }
+}
+
+async function readCommandText(command, args) {
+  try {
+    const result = await runProcess(command, args, { timeoutMs: 5000 })
+    return {
+      ok: true,
+      text: String(result.stdout || '').trim()
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error?.message || `${basename(command)} failed.`
+    }
+  }
+}
+
+function fetchJson(url) {
+  return new Promise((resolve, reject) => {
+    const request = httpsGet(
+      url,
+      {
+        headers: {
+          'user-agent': 'karaoke-system-youtube-plugin'
+        }
+      },
+      (response) => {
+        if ([301, 302, 303, 307, 308].includes(response.statusCode)) {
+          response.resume()
+          fetchJson(response.headers.location).then(resolve, reject)
+          return
+        }
+
+        if (response.statusCode !== 200) {
+          response.resume()
+          reject(new Error(`Version check failed with HTTP ${response.statusCode}`))
+          return
+        }
+
+        let body = ''
+        response.setEncoding('utf8')
+        response.on('data', (chunk) => {
+          body += chunk
+        })
+        response.on('end', () => {
+          try {
+            resolve(JSON.parse(body))
+          } catch (error) {
+            reject(error)
+          }
+        })
+      }
+    )
+
+    request.setTimeout(12000, () => {
+      request.destroy(new Error('Version check timed out.'))
+    })
+    request.on('error', reject)
+  })
+}
+
+async function checkYtdlpUpdate(paths) {
+  try {
+    const version = await getYtdlpVersion(paths)
+    if (!version.ok) {
+      return version
+    }
+
+    const latestRelease = await fetchJson(
+      'https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest'
+    )
+    const latestVersion = String(latestRelease?.tag_name || '')
+      .replace(/^yt-dlp@/, '')
+      .trim()
+
+    return {
+      ...version,
+      latestVersion,
+      upToDate: Boolean(latestVersion) && version.currentVersion === latestVersion
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      error: error.message || 'Failed to check yt-dlp version.'
+    }
+  }
+}
+
+async function getYtdlpVersion(paths) {
+  const tools = getTools(paths)
+  const current = await readCommandText(tools.ytdlp, ['--version'])
+  if (!current.ok) {
+    return { ok: false, error: 'NDK-yt-dlp is not installed. Install it first.' }
+  }
+
+  const currentVersion = current.text.split(/\s+/)[0]
+
+  return {
+    ok: true,
+    tool: 'yt-dlp',
+    currentVersion
+  }
 }
 
 function runProcess(command, args, options = {}) {
@@ -157,17 +251,31 @@ function parseVideoJsonLines(stdout) {
       }
     })
     .filter(Boolean)
-    .map((item) => ({
-      id: item.id,
-      title: item.title || item.fulltitle || item.id,
-      artist: item.uploader || item.channel || '',
-      thumbnail: item.thumbnail || item.thumbnails?.at?.(-1)?.url || '',
-      webpageUrl:
-        item.webpage_url ||
-        item.url ||
-        (item.id ? `https://www.youtube.com/watch?v=${item.id}` : ''),
-      duration: item.duration || null
-    }))
+    .map((item) => {
+      const liveStatus = String(item.live_status || '').toLowerCase()
+      const categories = Array.isArray(item.categories) ? item.categories : []
+      const musicMetadata = [item.genre, item.album, item.track, ...categories]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+      const isLive = Boolean(item.is_live) || ['is_live', 'is_upcoming'].includes(liveStatus)
+      const hasMusicFields = Boolean(item.track || item.album || item.artist)
+      const isMusic = !isLive && (hasMusicFields || /(^|\W)music(\W|$)/i.test(musicMetadata))
+
+      return {
+        id: item.id,
+        title: item.title || item.fulltitle || item.id,
+        artist: item.artist || item.uploader || item.channel || '',
+        thumbnail: item.thumbnail || item.thumbnails?.at?.(-1)?.url || '',
+        webpageUrl:
+          item.webpage_url ||
+          item.url ||
+          (item.id ? `https://www.youtube.com/watch?v=${item.id}` : ''),
+        duration: item.duration || null,
+        isLive,
+        isMusic
+      }
+    })
     .filter((item) => item.id && item.webpageUrl)
 }
 
@@ -488,6 +596,65 @@ function emitJobProgress(sender, pluginId, payload) {
   sender.send(`plugin:${pluginId}:jobProgress`, payload)
 }
 
+async function removePathIfPossible(targetPath) {
+  try {
+    await rm(targetPath, { recursive: true, force: true })
+    return true
+  } catch (error) {
+    if (['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error?.code)) {
+      return false
+    }
+    throw error
+  }
+}
+
+async function clearDirectoryFiles(dirPath) {
+  if (!existsSync(dirPath)) {
+    return {
+      removed: 0,
+      skipped: 0
+    }
+  }
+
+  let removed = 0
+  let skipped = 0
+  const names = await readdir(dirPath)
+  for (const name of names) {
+    const targetPath = join(dirPath, name)
+    if (await removePathIfPossible(targetPath)) {
+      removed += 1
+    } else {
+      skipped += 1
+    }
+  }
+
+  return {
+    removed,
+    skipped
+  }
+}
+
+async function cleanupPluginMedia(paths) {
+  await mkdir(paths.rawDownloadsDir, { recursive: true })
+  await mkdir(paths.convertedDir, { recursive: true })
+  mediaCache.clear()
+
+  const [downloadCleanup, convertedCleanup] = await Promise.all([
+    clearDirectoryFiles(paths.rawDownloadsDir),
+    clearDirectoryFiles(paths.convertedDir)
+  ])
+
+  return {
+    ok: true,
+    removedDownloads: downloadCleanup.removed,
+    removedConverted: convertedCleanup.removed,
+    skippedDownloads: downloadCleanup.skipped,
+    skippedConverted: convertedCleanup.skipped,
+    removedTotal: downloadCleanup.removed + convertedCleanup.removed,
+    skippedTotal: downloadCleanup.skipped + convertedCleanup.skipped
+  }
+}
+
 function buildMediaItem(pluginId, videoId, title, artist, source) {
   return {
     title,
@@ -551,6 +718,8 @@ async function resolveDashStream({ paths, plugin, sender, video, config }) {
   const artist = String(video?.artist || '')
   const url = String(video?.webpageUrl || video?.url || '').trim()
   const thumbnail = String(video?.thumbnail || '').trim()
+  const isLive = Boolean(video?.isLive)
+  const isMusic = Boolean(video?.isMusic)
 
   if (!videoId || !url) {
     return { ok: false, error: 'Invalid YouTube video.' }
@@ -586,7 +755,9 @@ async function resolveDashStream({ paths, plugin, sender, video, config }) {
       maxHeight: maxVideoHeight,
       ytdlFormat: getYtdlFormat(maxVideoHeight),
       ytdlPath: ready.tools.ytdlp,
-      thumbnail
+      thumbnail,
+      isLive,
+      isMusic
     }
 
     emitJobProgress(sender, plugin.id, {
@@ -620,12 +791,24 @@ export function register({ ipcMain, plugin, paths, getConfig, channelPrefix }) {
   const channels = [
     `${channelPrefix}:recommend`,
     `${channelPrefix}:search`,
-    `${channelPrefix}:download`
+    `${channelPrefix}:download`,
+    `${channelPrefix}:cancel`,
+    `${channelPrefix}:cleanupMedia`,
+    `${channelPrefix}:getYtdlpVersion`,
+    `${channelPrefix}:checkYtdlpUpdate`
   ]
   for (const channel of channels) {
     ipcMain.removeHandler(channel)
   }
 
+  if (!sessionState.cleanedOnStartup) {
+    sessionState.cleanedOnStartup = true
+    setTimeout(() => {
+      cleanupPluginMedia(paths).catch(() => {
+        // Startup cleanup is best-effort; user-triggered cleanup reports errors.
+      })
+    }, 1500)
+  }
   setTimeout(() => {
     warmRecommendationCache(paths, getConfig).catch(() => {
       // Cache warming is best-effort only.
@@ -650,6 +833,24 @@ export function register({ ipcMain, plugin, paths, getConfig, channelPrefix }) {
 
   ipcMain.handle(`${channelPrefix}:download`, async (event, video) => {
     return resolveDashStream({ paths, plugin, sender: event.sender, video, config: getConfig() })
+  })
+
+  ipcMain.handle(`${channelPrefix}:cancel`, async (_event, payload) => {
+    const videoId = String(payload?.videoId || '').trim()
+    if (videoId) mediaCache.delete(videoId)
+    return { ok: true, videoId }
+  })
+
+  ipcMain.handle(`${channelPrefix}:cleanupMedia`, async () => {
+    return cleanupPluginMedia(paths)
+  })
+
+  ipcMain.handle(`${channelPrefix}:getYtdlpVersion`, async () => {
+    return getYtdlpVersion(paths)
+  })
+
+  ipcMain.handle(`${channelPrefix}:checkYtdlpUpdate`, async () => {
+    return checkYtdlpUpdate(paths)
   })
 }
 

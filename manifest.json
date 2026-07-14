@@ -5,6 +5,7 @@
   "description": "Online multimedia player",
   "type": "Multimedia",
   "github": "https://github.com/catfish-2930/NDK-Youtube-Player",
+  "dependencies": ["ytdlp"],
   "enabledByDefault": true,
   "entryPoints": {
     "home": {
