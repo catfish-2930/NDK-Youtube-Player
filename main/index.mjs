@@ -5,7 +5,8 @@ import { spawn } from 'child_process'
 let registered = false
 const sessionState = (globalThis.__karaokeYoutubePlayerSessionState ||= {
   mediaCache: new Map(),
-  toolsReadyByPath: new Map()
+  toolsReadyByPath: new Map(),
+  searchStates: new Map()
 })
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000
 const DEFAULT_PAGE_SIZE = 10
@@ -15,6 +16,11 @@ const MAX_CACHED_MEDIA = 10
 const mediaCache = sessionState.mediaCache
 const toolsReadyByPath =
   sessionState.toolsReadyByPath || (sessionState.toolsReadyByPath = new Map())
+const searchStates = sessionState.searchStates || (sessionState.searchStates = new Map())
+const YOUTUBE_ORIGIN = 'https://www.youtube.com'
+const YOUTUBE_VIDEO_SEARCH_PARAMS = 'EgIQAfABAQ=='
+const YOUTUBE_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138 Safari/537.36'
 
 function ensureDir(dirPath) {
   mkdirSync(dirPath, { recursive: true })
@@ -165,6 +171,200 @@ function parseVideoJsonLines(stdout) {
     .filter((item) => item.id && item.webpageUrl)
 }
 
+function getSearchKey(query) {
+  return String(query || '').toLocaleLowerCase().trim()
+}
+
+function getText(value) {
+  if (typeof value === 'string') return value
+  if (typeof value?.simpleText === 'string') return value.simpleText
+  if (Array.isArray(value?.runs)) return value.runs.map((run) => run?.text || '').join('')
+  return ''
+}
+
+function parseDuration(value) {
+  const parts = getText(value)
+    .trim()
+    .split(':')
+    .map(Number)
+  if (!parts.length || parts.some((part) => !Number.isFinite(part))) return null
+  return parts.reduce((total, part) => total * 60 + part, 0)
+}
+
+function findJsonObject(source, marker) {
+  let markerIndex = source.indexOf(marker)
+  while (markerIndex >= 0) {
+    const start = source.indexOf('{', markerIndex + marker.length)
+    if (start < 0) return null
+
+    let depth = 0
+    let inString = false
+    let escaped = false
+    for (let index = start; index < source.length; index += 1) {
+      const character = source[index]
+      if (inString) {
+        if (escaped) escaped = false
+        else if (character === '\\') escaped = true
+        else if (character === '"') inString = false
+        continue
+      }
+      if (character === '"') inString = true
+      else if (character === '{') depth += 1
+      else if (character === '}') {
+        depth -= 1
+        if (depth === 0) {
+          try {
+            return JSON.parse(source.slice(start, index + 1))
+          } catch {
+            break
+          }
+        }
+      }
+    }
+    markerIndex = source.indexOf(marker, markerIndex + marker.length)
+  }
+  return null
+}
+
+function findObjects(value, key, results = []) {
+  if (!value || typeof value !== 'object') return results
+  if (Array.isArray(value)) {
+    for (const item of value) findObjects(item, key, results)
+    return results
+  }
+  if (value[key] && typeof value[key] === 'object') results.push(value[key])
+  for (const item of Object.values(value)) findObjects(item, key, results)
+  return results
+}
+
+function parseYoutubeVideos(data) {
+  const seen = new Set()
+  return findObjects(data, 'videoRenderer')
+    .map((renderer) => {
+      const id = String(renderer.videoId || '')
+      if (!id || seen.has(id)) return null
+      seen.add(id)
+      const thumbnails = renderer.thumbnail?.thumbnails || []
+      return {
+        id,
+        title: getText(renderer.title) || id,
+        artist: getText(renderer.ownerText) || getText(renderer.longBylineText) || getText(renderer.shortBylineText),
+        thumbnail: thumbnails.at(-1)?.url || '',
+        webpageUrl: `${YOUTUBE_ORIGIN}/watch?v=${id}`,
+        duration: Number(renderer.lengthSeconds) || parseDuration(renderer.lengthText)
+      }
+    })
+    .filter(Boolean)
+}
+
+function extractContinuation(data) {
+  const renderer = findObjects(data, 'continuationItemRenderer')[0]
+  return String(renderer?.continuationEndpoint?.continuationCommand?.token || '')
+}
+
+function getYoutubeHeaders(clientVersion, visitorData) {
+  return {
+    'user-agent': YOUTUBE_USER_AGENT,
+    'accept-language': 'en-US,en;q=0.9',
+    'content-type': 'application/json',
+    'x-youtube-client-name': '1',
+    'x-youtube-client-version': clientVersion,
+    ...(visitorData ? { 'x-goog-visitor-id': visitorData } : {})
+  }
+}
+
+async function fetchYoutubeSearchPage(query) {
+  const url = new URL('/results', YOUTUBE_ORIGIN)
+  url.searchParams.set('search_query', query)
+  url.searchParams.set('sp', YOUTUBE_VIDEO_SEARCH_PARAMS)
+  const response = await fetch(url, {
+    headers: {
+      'user-agent': YOUTUBE_USER_AGENT,
+      'accept-language': 'en-US,en;q=0.9'
+    },
+    signal: AbortSignal.timeout(10000)
+  })
+  if (!response.ok) throw new Error(`YouTube search failed (${response.status}).`)
+
+  const html = await response.text()
+  const data = findJsonObject(html, 'var ytInitialData = ')
+  const config = findJsonObject(html, 'ytcfg.set(')
+  const apiKey = String(config?.INNERTUBE_API_KEY || '')
+  const clientVersion = String(config?.INNERTUBE_CLIENT_VERSION || '')
+  if (!data || !apiKey || !clientVersion) {
+    throw new Error('YouTube returned an unsupported search response.')
+  }
+  return {
+    videos: parseYoutubeVideos(data),
+    continuation: extractContinuation(data),
+    apiKey,
+    clientVersion,
+    visitorData: String(config?.VISITOR_DATA || '')
+  }
+}
+
+async function fetchYoutubeContinuation(state) {
+  if (!state.continuation || !state.apiKey || !state.clientVersion) return null
+  const response = await fetch(`${YOUTUBE_ORIGIN}/youtubei/v1/search?key=${state.apiKey}`, {
+    method: 'POST',
+    headers: getYoutubeHeaders(state.clientVersion, state.visitorData),
+    body: JSON.stringify({
+      context: {
+        client: {
+          clientName: 'WEB',
+          clientVersion: state.clientVersion,
+          hl: 'en',
+          gl: 'MY',
+          ...(state.visitorData ? { visitorData: state.visitorData } : {})
+        }
+      },
+      continuation: state.continuation
+    }),
+    signal: AbortSignal.timeout(10000)
+  })
+  if (!response.ok) throw new Error(`YouTube next page failed (${response.status}).`)
+  const data = await response.json()
+  return {
+    videos: parseYoutubeVideos(data),
+    continuation: extractContinuation(data)
+  }
+}
+
+async function getYoutubeSearchState(paths, query, neededCount) {
+  const key = getSearchKey(query)
+  let state = searchStates.get(key)
+  if (!state) {
+    state = {
+      videos: readSearchCache(paths, query) || [],
+      continuation: '',
+      apiKey: '',
+      clientVersion: '',
+      visitorData: ''
+    }
+    searchStates.set(key, state)
+  }
+
+  const targetCount = Math.min(MAX_FETCH_RESULTS, neededCount)
+  while (state.videos.length < targetCount) {
+    const previousContinuation = state.continuation
+    const page = state.apiKey ? await fetchYoutubeContinuation(state) : await fetchYoutubeSearchPage(query)
+    if (!page) break
+    if (!state.apiKey) {
+      state.apiKey = page.apiKey
+      state.clientVersion = page.clientVersion
+      state.visitorData = page.visitorData
+    }
+    const knownIds = new Set(state.videos.map((video) => video.id))
+    const newVideos = page.videos.filter((video) => !knownIds.has(video.id))
+    state.videos.push(...newVideos)
+    state.continuation = page.continuation
+    if (!state.continuation || (!newVideos.length && state.continuation === previousContinuation)) break
+  }
+
+  writeSearchCache(paths, query, state.videos)
+  return state
+}
+
 function getSearchCachePath(paths, query) {
   const key = Buffer.from(
     String(query || '')
@@ -207,9 +407,6 @@ function writeSearchCache(paths, query, videos) {
 }
 
 async function listVideos(paths, query, config, options = {}) {
-  const ready = await assertToolsReady(paths)
-  if (!ready.ok) return ready
-
   const page = Math.max(1, Number(options.page || 1))
   const pageSize = Math.max(
     1,
@@ -232,11 +429,18 @@ async function listVideos(paths, query, config, options = {}) {
     }
   }
 
+  let state
   let cached = false
-  let allVideos = readSearchCache(paths, searchQuery)
-  if (Array.isArray(allVideos) && allVideos.length >= neededCount) {
-    cached = true
-  } else {
+  try {
+    state = await getYoutubeSearchState(paths, searchQuery, neededCount)
+    cached = state.videos.length >= neededCount && !state.apiKey
+  } catch (youtubeError) {
+    // Search should normally use YouTube's web response directly. Keep yt-dlp as a
+    // compatibility fallback when YouTube changes that response format.
+    const ready = await assertToolsReady(paths)
+    if (!ready.ok) {
+      return { ok: false, error: youtubeError.message || ready.error }
+    }
     const fetchCount = Math.min(MAX_FETCH_RESULTS, Math.max(neededCount, DEFAULT_PAGE_SIZE * 3))
     const result = await runProcess(ready.tools.ytdlp, [
       '--dump-json',
@@ -246,14 +450,13 @@ async function listVideos(paths, query, config, options = {}) {
       String(fetchCount),
       `ytsearch${fetchCount}:${searchQuery}`
     ])
-
-    allVideos = parseVideoJsonLines(result.stdout)
-    writeSearchCache(paths, searchQuery, allVideos)
+    state = { videos: parseVideoJsonLines(result.stdout), continuation: '' }
+    writeSearchCache(paths, searchQuery, state.videos)
   }
 
-  const videos = (allVideos || []).slice(startIndex, endIndex)
-  const hasNext = (allVideos || []).length > endIndex
-  const totalPages = hasNext ? null : Math.max(1, Math.ceil((allVideos || []).length / pageSize))
+  const videos = state.videos.slice(startIndex, endIndex)
+  const hasNext = state.videos.length > endIndex || Boolean(state.continuation)
+  const totalPages = hasNext ? null : Math.max(1, Math.ceil(state.videos.length / pageSize))
 
   return {
     ok: true,
