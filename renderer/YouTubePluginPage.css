@@ -14,6 +14,38 @@
   grid-template-rows: auto 1fr auto auto;
 }
 
+.youtube-keyword-suggestions {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 3px 2px 6px;
+  scrollbar-width: none;
+}
+
+.youtube-keyword-suggestions::-webkit-scrollbar {
+  display: none;
+}
+
+.youtube-keyword-suggestion {
+  max-width: min(300px, 42vw);
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  padding: 11px 16px;
+  background: rgba(8, 13, 44, 0.82);
+  color: #fff;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.youtube-keyword-suggestion:active {
+  background: rgba(91, 109, 236, 0.9);
+}
+
 .youtube-plugin-title {
   width: 220px;
   border-radius: 999px;

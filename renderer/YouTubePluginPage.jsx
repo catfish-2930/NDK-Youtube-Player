@@ -3,6 +3,65 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Search, X, XCircle } from 'lucide-react'
 import './YouTubePluginPage.css'
 
+function YoutubeSuggestions({ query, locale, onSelect }) {
+  const [suggestionResult, setSuggestionResult] = useState({ query: '', suggestions: [] })
+  const normalizedQuery = String(query || '').trim()
+
+  useEffect(() => {
+    if (!normalizedQuery) {
+      return undefined
+    }
+
+    let active = true
+    const timer = setTimeout(async () => {
+      try {
+        const result = await window.api.plugins.invoke('plugin:youtube-player:suggest', {
+          query: normalizedQuery,
+          locale
+        })
+        if (active) {
+          setSuggestionResult({
+            query: normalizedQuery,
+            suggestions: Array.isArray(result?.suggestions) ? result.suggestions : []
+          })
+        }
+      } catch {
+        if (active) setSuggestionResult({ query: normalizedQuery, suggestions: [] })
+      }
+    }, 280)
+
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [query, locale])
+
+  if (!normalizedQuery || suggestionResult.query !== normalizedQuery || suggestionResult.suggestions.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="youtube-keyword-suggestions" aria-label="YouTube search suggestions">
+      {suggestionResult.suggestions.map((suggestion) => (
+        <button
+          className="youtube-keyword-suggestion"
+          type="button"
+          key={suggestion}
+          onClick={() => onSelect(suggestion)}
+        >
+          {suggestion}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+YoutubeSuggestions.propTypes = {
+  query: PropTypes.string.isRequired,
+  locale: PropTypes.oneOf(['zh', 'en']).isRequired,
+  onSelect: PropTypes.func.isRequired
+}
+
 function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
   const pageSize = 10
   const [query, setQuery] = useState('')
@@ -18,6 +77,20 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
   const [currentPage, setCurrentPage] = useState(1)
   const [hasNextPage, setHasNextPage] = useState(false)
   const [totalPages, setTotalPages] = useState(1)
+  const [locale, setLocale] = useState('zh')
+
+  useEffect(() => {
+    let active = true
+    window.api.settings
+      .get('locale', 'zh')
+      .then((value) => {
+        if (active && (value === 'zh' || value === 'en')) setLocale(value)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
 
   const loadVideos = async (nextQuery = '', targetPage = 1) => {
     setLoading(true)
@@ -363,6 +436,13 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
           onText={handleKeyboardText}
           onConfirm={handleKeyboardConfirm}
           displayValue={query}
+          inputAccessory={
+            <YoutubeSuggestions
+              query={query}
+              locale={locale}
+              onSelect={(suggestion) => setQuery(suggestion)}
+            />
+          }
         />
       ) : null}
     </section>

@@ -9,7 +9,8 @@ const sessionState = (globalThis.__karaokeYoutubePlayerSessionState ||= {
   cleanedOnStartup: false,
   mediaCache: new Map(),
   toolsReadyByPath: new Map(),
-  searchStates: new Map()
+  searchStates: new Map(),
+  suggestionCache: new Map()
 })
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000
 const DEFAULT_PAGE_SIZE = 10
@@ -20,10 +21,12 @@ const mediaCache = sessionState.mediaCache
 const toolsReadyByPath =
   sessionState.toolsReadyByPath || (sessionState.toolsReadyByPath = new Map())
 const searchStates = sessionState.searchStates || (sessionState.searchStates = new Map())
+const suggestionCache = sessionState.suggestionCache || (sessionState.suggestionCache = new Map())
 const YOUTUBE_ORIGIN = 'https://www.youtube.com'
 const YOUTUBE_VIDEO_SEARCH_PARAMS = 'EgIQAfABAQ=='
 const YOUTUBE_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138 Safari/537.36'
+const SUGGESTION_CACHE_TTL_MS = 5 * 60 * 1000
 
 function ensureDir(dirPath) {
   mkdirSync(dirPath, { recursive: true })
@@ -281,6 +284,47 @@ function parseVideoJsonLines(stdout) {
 
 function getSearchKey(query) {
   return String(query || '').toLocaleLowerCase().trim()
+}
+
+function getYoutubeLanguage(locale) {
+  return locale === 'en'
+    ? { acceptLanguage: 'en-US,en;q=0.9', hl: 'en' }
+    : { acceptLanguage: 'zh-CN,zh;q=0.9,en;q=0.8', hl: 'zh-CN' }
+}
+
+async function getYoutubeSuggestions(query, locale) {
+  const normalizedQuery = String(query || '').trim()
+  if (!normalizedQuery) return []
+
+  const language = getYoutubeLanguage(locale)
+  const cacheKey = `${language.hl}:${getSearchKey(normalizedQuery)}`
+  const cached = suggestionCache.get(cacheKey)
+  if (cached && Date.now() - cached.createdAt < SUGGESTION_CACHE_TTL_MS) {
+    return cached.suggestions
+  }
+
+  const url = new URL('https://suggestqueries.google.com/complete/search')
+  url.searchParams.set('client', 'firefox')
+  url.searchParams.set('ds', 'yt')
+  url.searchParams.set('hl', language.hl)
+  url.searchParams.set('gl', 'MY')
+  url.searchParams.set('q', normalizedQuery)
+  const response = await fetch(url, {
+    headers: {
+      'user-agent': YOUTUBE_USER_AGENT,
+      'accept-language': language.acceptLanguage
+    },
+    signal: AbortSignal.timeout(5000)
+  })
+  if (!response.ok) throw new Error(`YouTube suggestions failed (${response.status}).`)
+
+  const payload = await response.json()
+  const suggestions = [...new Set(Array.isArray(payload?.[1]) ? payload[1] : [])]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .slice(0, 8)
+  suggestionCache.set(cacheKey, { createdAt: Date.now(), suggestions })
+  return suggestions
 }
 
 function getText(value) {
@@ -791,6 +835,7 @@ export function register({ ipcMain, plugin, paths, getConfig, channelPrefix }) {
   const channels = [
     `${channelPrefix}:recommend`,
     `${channelPrefix}:search`,
+    `${channelPrefix}:suggest`,
     `${channelPrefix}:download`,
     `${channelPrefix}:cancel`,
     `${channelPrefix}:cleanupMedia`,
@@ -829,6 +874,18 @@ export function register({ ipcMain, plugin, paths, getConfig, channelPrefix }) {
       page: payload?.page,
       pageSize: payload?.pageSize
     })
+  })
+
+  ipcMain.handle(`${channelPrefix}:suggest`, async (_event, payload) => {
+    try {
+      return {
+        ok: true,
+        suggestions: await getYoutubeSuggestions(payload?.query, payload?.locale)
+      }
+    } catch {
+      // Suggestions are optional: a network failure must not interrupt typing.
+      return { ok: true, suggestions: [] }
+    }
   })
 
   ipcMain.handle(`${channelPrefix}:download`, async (event, video) => {
