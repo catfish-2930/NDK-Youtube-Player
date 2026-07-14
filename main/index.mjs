@@ -397,13 +397,45 @@ function parseYoutubeVideos(data) {
       if (!id || seen.has(id)) return null
       seen.add(id)
       const thumbnails = renderer.thumbnail?.thumbnails || []
+      const isLive =
+        Boolean(renderer.upcomingEventData) ||
+        (renderer.badges || []).some((badge) => {
+          const metadata = badge?.metadataBadgeRenderer
+          return metadata?.style === 'BADGE_STYLE_TYPE_LIVE_NOW' || /live/i.test(getText(metadata?.label))
+        }) ||
+        (renderer.thumbnailOverlays || []).some((overlay) => {
+          const status = overlay?.thumbnailOverlayTimeStatusRenderer
+          return status?.style === 'LIVE' || /live/i.test(getText(status?.text))
+        })
+      const channel = getText(renderer.ownerText) || getText(renderer.longBylineText)
+      const isMusic =
+        !isLive &&
+        ((renderer.thumbnailOverlays || []).some(
+          (overlay) => overlay?.thumbnailOverlayTimeStatusRenderer?.icon?.iconType === 'MUSIC'
+        ) ||
+          (renderer.ownerBadges || []).some((badge) => {
+            const metadata = badge?.metadataBadgeRenderer
+            return (
+              metadata?.icon?.iconType === 'AUDIO_BADGE' ||
+              metadata?.style === 'BADGE_STYLE_TYPE_VERIFIED_ARTIST' ||
+              /music|音乐|音樂/i.test(
+                `${getText(metadata?.label)} ${metadata?.tooltip || ''} ${getText(metadata?.accessibilityData)}`
+              )
+            )
+          }) ||
+          /\s- Topic$/i.test(channel) ||
+          (renderer.detailedMetadataSnippets || []).some((snippet) =>
+            /provided to youtube by/i.test(getText(snippet?.snippetText))
+          ))
       return {
         id,
         title: getText(renderer.title) || id,
         artist: getText(renderer.ownerText) || getText(renderer.longBylineText) || getText(renderer.shortBylineText),
         thumbnail: thumbnails.at(-1)?.url || '',
         webpageUrl: `${YOUTUBE_ORIGIN}/watch?v=${id}`,
-        duration: Number(renderer.lengthSeconds) || parseDuration(renderer.lengthText)
+        duration: Number(renderer.lengthSeconds) || parseDuration(renderer.lengthText),
+        isLive,
+        isMusic
       }
     })
     .filter(Boolean)

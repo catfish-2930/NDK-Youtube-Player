@@ -17,6 +17,8 @@
 .youtube-keyword-suggestions {
   display: flex;
   gap: 10px;
+  height: 52px;
+  min-height: 52px;
   overflow-x: auto;
   padding: 3px 2px 6px;
   scrollbar-width: none;
@@ -32,7 +34,8 @@
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 12px;
-  padding: 11px 16px;
+  height: 43px;
+  padding: 0 16px;
   background: rgba(8, 13, 44, 0.82);
   color: #fff;
   cursor: pointer;

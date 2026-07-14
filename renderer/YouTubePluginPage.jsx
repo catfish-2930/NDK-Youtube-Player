@@ -36,13 +36,16 @@ function YoutubeSuggestions({ query, locale, onSelect }) {
     }
   }, [query, locale])
 
-  if (!normalizedQuery || suggestionResult.query !== normalizedQuery || suggestionResult.suggestions.length === 0) {
-    return null
-  }
+  const suggestions =
+    normalizedQuery && suggestionResult.query === normalizedQuery ? suggestionResult.suggestions : []
 
   return (
-    <div className="youtube-keyword-suggestions" aria-label="YouTube search suggestions">
-      {suggestionResult.suggestions.map((suggestion) => (
+    <div
+      className="youtube-keyword-suggestions"
+      aria-label="YouTube search suggestions"
+      aria-hidden={suggestions.length === 0}
+    >
+      {suggestions.map((suggestion) => (
         <button
           className="youtube-keyword-suggestion"
           type="button"
@@ -327,7 +330,7 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
                   {video.isLive ? (
                     <span className="youtube-content-badge live">LIVE</span>
                   ) : video.isMusic ? (
-                    <span className="youtube-content-badge music">♫ MUSIC</span>
+                    <span className="youtube-content-badge music">MUSIC</span>
                   ) : null}
                   {progress ? (
                     <span className={`youtube-video-progress ${progress.status || ''}`}>
