@@ -483,13 +483,13 @@
   }
 }
 
-/* Match the host application's portrait layout without forcing every row to fit at once. */
+/* Portrait keeps two natural-width cards per row; pagination controls the visible row count. */
 .main-screen-frame--portrait .youtube-video-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: none;
   grid-auto-rows: max-content;
   align-content: start;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .main-screen-frame--portrait .youtube-video-card {

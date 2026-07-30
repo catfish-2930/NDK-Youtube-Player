@@ -1,7 +1,10 @@
 import PropTypes from 'prop-types'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Search, X, XCircle } from 'lucide-react'
 import './YouTubePluginPage.css'
+
+const LANDSCAPE_PAGE_SIZE = 10
+const PORTRAIT_COLUMNS = 2
 
 function YoutubeSuggestions({ query, locale, onSelect }) {
   const [suggestionResult, setSuggestionResult] = useState({ query: '', suggestions: [] })
@@ -34,10 +37,12 @@ function YoutubeSuggestions({ query, locale, onSelect }) {
       active = false
       clearTimeout(timer)
     }
-  }, [query, locale])
+  }, [normalizedQuery, locale])
 
   const suggestions =
-    normalizedQuery && suggestionResult.query === normalizedQuery ? suggestionResult.suggestions : []
+    normalizedQuery && suggestionResult.query === normalizedQuery
+      ? suggestionResult.suggestions
+      : []
 
   return (
     <div
@@ -66,7 +71,7 @@ YoutubeSuggestions.propTypes = {
 }
 
 function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
-  const pageSize = 10
+  const [pageSize, setPageSize] = useState(null)
   const [query, setQuery] = useState('')
   const [keyboardOpen, setKeyboardOpen] = useState(false)
   const [videos, setVideos] = useState([])
@@ -81,6 +86,41 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
   const [hasNextPage, setHasNextPage] = useState(false)
   const [totalPages, setTotalPages] = useState(1)
   const [locale, setLocale] = useState('zh')
+  const videoGridRef = useRef(null)
+  const activeQueryRef = useRef('')
+  const loadRequestIdRef = useRef(0)
+
+  const updatePageSize = useCallback(() => {
+    const grid = videoGridRef.current
+    if (!grid) return
+
+    const portrait = Boolean(grid.closest('.main-screen-frame--portrait'))
+    if (!portrait) {
+      setPageSize((current) => (current === LANDSCAPE_PAGE_SIZE ? current : LANDSCAPE_PAGE_SIZE))
+      return
+    }
+
+    const gridStyle = window.getComputedStyle(grid)
+    const columnGap = Number.parseFloat(gridStyle.columnGap) || 0
+    const rowGap = Number.parseFloat(gridStyle.rowGap) || 0
+    const availableWidth = grid.clientWidth
+    const availableHeight = grid.clientHeight
+    if (availableWidth <= 0 || availableHeight <= 0) return
+
+    const cardWidth = (availableWidth - columnGap * (PORTRAIT_COLUMNS - 1)) / PORTRAIT_COLUMNS
+    const cardGap = Math.min(8, Math.max(5, cardWidth * 0.018))
+    const metaGap = Math.min(4, Math.max(2, cardWidth * 0.009))
+    const titleFontSize = Math.min(16, Math.max(12, cardWidth * 0.092))
+    const artistFontSize = Math.min(13, Math.max(10, cardWidth * 0.072))
+    const estimatedCardHeight =
+      (cardWidth * 9) / 16 + cardGap + titleFontSize * 1.18 * 2 + metaGap + artistFontSize * 1.2
+    const renderedCard = grid.querySelector('.youtube-video-card')
+    const cardHeight = Math.max(estimatedCardHeight, renderedCard?.scrollHeight || 0)
+    const visibleRows = Math.max(1, Math.floor((availableHeight + rowGap) / (cardHeight + rowGap)))
+    const nextPageSize = visibleRows * PORTRAIT_COLUMNS
+
+    setPageSize((current) => (current === nextPageSize ? current : nextPageSize))
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -95,52 +135,77 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
     }
   }, [])
 
-  const loadVideos = async (nextQuery = '', targetPage = 1) => {
-    setLoading(true)
-    setMessage('')
+  const loadVideos = useCallback(
+    async (nextQuery = '', targetPage = 1) => {
+      if (!pageSize) return
 
-    try {
-      const channel = nextQuery ? 'plugin:youtube-player:search' : 'plugin:youtube-player:recommend'
-      const payload = nextQuery
-        ? { query: nextQuery, page: targetPage, pageSize }
-        : { page: targetPage, pageSize }
-      const result = await window.api.plugins.invoke(channel, payload)
-      if (!result?.ok) {
+      const requestId = loadRequestIdRef.current + 1
+      loadRequestIdRef.current = requestId
+      setLoading(true)
+      setMessage('')
+
+      try {
+        const channel = nextQuery
+          ? 'plugin:youtube-player:search'
+          : 'plugin:youtube-player:recommend'
+        const payload = nextQuery
+          ? { query: nextQuery, page: targetPage, pageSize }
+          : { page: targetPage, pageSize }
+        const result = await window.api.plugins.invoke(channel, payload)
+        if (requestId !== loadRequestIdRef.current) return
+
+        if (!result?.ok) {
+          setVideos([])
+          setCurrentPage(1)
+          setHasNextPage(false)
+          setTotalPages(1)
+          setMessage(result?.error || 'YouTube plugin is not installed.')
+          return
+        }
+
+        setVideos(Array.isArray(result.videos) ? result.videos : [])
+        setCurrentPage(Math.max(1, Number(result.page || targetPage || 1)))
+        setHasNextPage(Boolean(result.hasNext))
+        setTotalPages(
+          Number.isFinite(Number(result.totalPages))
+            ? Math.max(1, Number(result.totalPages))
+            : Math.max(1, Number(result.page || targetPage || 1))
+        )
+      } catch (error) {
+        if (requestId !== loadRequestIdRef.current) return
+
         setVideos([])
         setCurrentPage(1)
         setHasNextPage(false)
         setTotalPages(1)
-        setMessage(result?.error || 'YouTube plugin is not installed.')
-        return
+        setMessage(error.message || 'YouTube plugin is not installed.')
+      } finally {
+        if (requestId === loadRequestIdRef.current) {
+          setLoading(false)
+        }
       }
-
-      setVideos(Array.isArray(result.videos) ? result.videos : [])
-      setCurrentPage(Math.max(1, Number(result.page || targetPage || 1)))
-      setHasNextPage(Boolean(result.hasNext))
-      setTotalPages(
-        Number.isFinite(Number(result.totalPages))
-          ? Math.max(1, Number(result.totalPages))
-          : Math.max(1, Number(result.page || targetPage || 1))
-      )
-    } catch (error) {
-      setVideos([])
-      setCurrentPage(1)
-      setHasNextPage(false)
-      setTotalPages(1)
-      setMessage(error.message || 'YouTube plugin is not installed.')
-    } finally {
-      setLoading(false)
-    }
-  }
+    },
+    [pageSize]
+  )
 
   useEffect(() => {
-    let alive = true
+    const grid = videoGridRef.current
+    if (!grid) return undefined
 
-    loadVideos('', 1).catch(() => {
-      if (!alive) return
-      setLoading(false)
-    })
+    const resizeObserver = new ResizeObserver(updatePageSize)
+    resizeObserver.observe(grid)
+    updatePageSize()
 
+    return () => resizeObserver.disconnect()
+  }, [updatePageSize])
+
+  useEffect(() => {
+    if (!pageSize) return
+
+    loadVideos(activeQueryRef.current, 1)
+  }, [loadVideos, pageSize])
+
+  useEffect(() => {
     const unsubscribe = window.api.plugins.onPluginJobProgress('youtube-player', (progress) => {
       setJobProgress((prev) => {
         const next = { ...prev }
@@ -154,13 +219,19 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
     })
 
     return () => {
-      alive = false
       unsubscribe()
     }
   }, [])
 
+  useEffect(() => {
+    const animationFrame = window.requestAnimationFrame(updatePageSize)
+    return () => window.cancelAnimationFrame(animationFrame)
+  }, [videos, updatePageSize])
+
   const handleSearch = () => {
-    loadVideos(query.trim(), 1)
+    const nextQuery = query.trim()
+    activeQueryRef.current = nextQuery
+    loadVideos(nextQuery, 1)
   }
 
   const handleKeyboardInput = (key) => {
@@ -195,12 +266,12 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
 
   const handlePrevPage = () => {
     if (loading || currentPage <= 1) return
-    loadVideos(query.trim(), currentPage - 1)
+    loadVideos(activeQueryRef.current, currentPage - 1)
   }
 
   const handleNextPage = () => {
     if (loading || !hasNextPage) return
-    loadVideos(query.trim(), currentPage + 1)
+    loadVideos(activeQueryRef.current, currentPage + 1)
   }
 
   const handleLongPressStart = (video) => {
@@ -286,7 +357,7 @@ function YouTubePluginPage({ onEnqueueMedia, onShowToast, KeyboardComponent }) {
     <section className={`youtube-plugin-page ${loading || videos.length === 0 ? 'has-state' : ''}`}>
       <div className="youtube-plugin-title">推荐榜</div>
 
-      <div className="youtube-video-grid">
+      <div className="youtube-video-grid" ref={videoGridRef}>
         {loading ? (
           <div className="youtube-state youtube-loading-state">
             <span className="youtube-spinner" aria-hidden="true" />
