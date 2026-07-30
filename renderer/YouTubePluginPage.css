@@ -483,8 +483,15 @@
   }
 }
 
-/* Match the host application's rotation-aware portrait layouts: two videos per row. */
+/* Match the host application's portrait layout without forcing every row to fit at once. */
 .main-screen-frame--portrait .youtube-video-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-template-rows: repeat(5, minmax(0, 1fr));
+  grid-template-rows: none;
+  grid-auto-rows: max-content;
+  align-content: start;
+  overflow-y: auto;
+}
+
+.main-screen-frame--portrait .youtube-video-card {
+  height: auto;
 }
