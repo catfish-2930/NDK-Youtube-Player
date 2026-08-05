@@ -727,8 +727,77 @@ async function cleanupPluginMedia(paths) {
     skippedDownloads: downloadCleanup.skipped,
     skippedConverted: convertedCleanup.skipped,
   }
+}
 
-  ensureDir(paths.cacheDir)
+function buildMediaItem(pluginId, videoId, title, artist, source) {
+  return {
+    title,
+    artist,
+    path: source.webpageUrl || source.videoUrl || '',
+    mediaSource: source,
+    sourcePluginId: pluginId,
+    externalId: videoId,
+    thumbnail: source.thumbnail || ''
+  }
+}
+
+function getCachedMediaItem({ plugin, videoId, title, artist }) {
+  const cached = mediaCache.get(videoId)
+  if (!cached?.source?.webpageUrl) {
+    mediaCache.delete(videoId)
+    return null
+  }
+
+  const nextCached = {
+    ...cached,
+    title: title || cached.title,
+    artist: artist || cached.artist
+  }
+  mediaCache.set(videoId, nextCached)
+  return buildMediaItem(plugin.id, videoId, nextCached.title, nextCached.artist, nextCached.source)
+}
+
+function getYtdlFormat(maxVideoHeight) {
+  const height = normalizeMaxVideoHeight(maxVideoHeight)
+  return `bestvideo[height<=${height}][vcodec!^=av01]+bestaudio/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`
+}
+
+function normalizeMaxVideoHeight(value) {
+  const height = Number(value || 1080)
+  return [480, 720, 1080, 1440, 2160].includes(height) ? height : 1080
+}
+
+function addCachedMedia({ plugin, videoId, title, artist, source }) {
+  mediaCache.delete(videoId)
+  mediaCache.set(videoId, {
+    videoId,
+    title,
+    artist,
+    source,
+    preparedAt: Date.now()
+  })
+
+  while (mediaCache.size > MAX_CACHED_MEDIA) {
+    const oldest = mediaCache.keys().next().value
+    if (!oldest) break
+    mediaCache.delete(oldest)
+  }
+
+  return buildMediaItem(plugin.id, videoId, title, artist, source)
+}
+
+async function resolveDashStream({ paths, plugin, sender, video, config }) {
+  const videoId = String(video?.id || '').trim()
+  const title = String(video?.title || videoId || 'YouTube Video')
+  const artist = String(video?.artist || '')
+  const url = String(video?.webpageUrl || video?.url || '').trim()
+  const thumbnail = String(video?.thumbnail || '').trim()
+  const isLive = Boolean(video?.isLive)
+  const isMusic = Boolean(video?.isMusic)
+
+  if (!videoId || !url) {
+    return { ok: false, error: 'Invalid YouTube video.' }
+  }
 
   const maxVideoHeight = normalizeMaxVideoHeight(config.maxVideoHeight)
   const cachedMediaItem = getCachedMediaItem({ plugin, videoId, title, artist })
