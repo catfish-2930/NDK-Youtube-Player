@@ -15,6 +15,22 @@
       "default": "华语 KTV 官方 MV"
     },
     {
+      "key": "playerClient",
+      "label": "YouTube player client",
+      "type": "select",
+      "default": "android_vr",
+      "options": [
+        {
+          "label": "android_vr (faster, no n challenge)",
+          "value": "android_vr"
+        },
+        {
+          "label": "web_embedded (n challenge, PO token)",
+          "value": "web_embedded"
+        }
+      ]
+    },
+    {
       "key": "maxVideoHeight",
       "label": "Max video quality",
       "type": "select",
