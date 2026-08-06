@@ -1,12 +1,37 @@
 {
   "id": "youtube-player",
-  "name": "NDK-YouTube Player",
-  "version": "0.1.0",
-  "description": "Online multimedia player",
+  "name": "YouTube",
+  "version": "0.2.0",
+  "description": "Search YouTube and queue it for playback. Includes yt-dlp.",
   "type": "Multimedia",
   "github": "https://github.com/catfish-2930/NDK-Youtube-Player",
-  "dependencies": ["ytdlp"],
   "enabledByDefault": true,
+  "installer": {
+    "windows": {
+      "workDir": "plugins/workspace/youtube-player",
+      "toolsDir": "plugins/installed/youtube-player/vendor/bin",
+      "tools": [
+        {
+          "id": "yt-dlp",
+          "name": "yt-dlp",
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_win.zip",
+          "target": "yt-dlp_win.zip"
+        }
+      ]
+    },
+    "linux": {
+      "workDir": "plugins/workspace/youtube-player",
+      "toolsDir": "plugins/installed/youtube-player/vendor/bin",
+      "tools": [
+        {
+          "id": "yt-dlp",
+          "name": "yt-dlp",
+          "url": "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux.zip",
+          "target": "yt-dlp_linux.zip"
+        }
+      ]
+    }
+  },
   "entryPoints": {
     "home": {
       "label": "YouTube",
